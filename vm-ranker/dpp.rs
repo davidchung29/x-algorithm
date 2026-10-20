@@ -44,10 +44,13 @@ pub fn rescore(
         return Vec::new();
     }
 
-    let mut sorted: Vec<usize> = (0..n).collect();
+    let mut sorted: Vec<usize> = (0..n).filter(|&i| inputs[i].score.is_finite()).collect();
     sorted.sort_unstable_by(|&a, &b| compare_scores_desc(inputs[a].score, inputs[b].score));
 
-    let top_count = config.max_selected_rank.min(n);
+    let top_count = config.max_selected_rank.min(sorted.len());
+    if top_count == 0 {
+        return Vec::new();
+    }
     let top_indices: &[usize] = &sorted[..top_count];
     let m: usize = top_count;
 
@@ -388,6 +391,30 @@ mod tests {
             result.iter().map(|r| (r.id, r.score)).collect::<Vec<_>>(),
             vec![(3, 10.0), (1, 5.0)],
         );
+    }
+
+    #[test]
+    fn invalid_scores_cannot_displace_finite_candidates() {
+        let inputs = vec![
+            make_input(1, 10.0, &[1.0, 0.0, 0.0, 0.0]),
+            make_input(2, f64::INFINITY, &[0.0, 1.0, 0.0, 0.0]),
+            make_input(3, 5.0, &[0.0, 0.0, 1.0, 0.0]),
+            make_input(4, f64::NAN, &[0.0, 0.0, 0.0, 1.0]),
+        ];
+        let result = rescore(&inputs, None, &default_config(), 0);
+        assert_eq!(result.iter().map(|r| r.id).collect::<Vec<_>>(), vec![1, 3]);
+    }
+
+    #[test]
+    fn all_invalid_scores_select_nothing() {
+        let inputs = vec![
+            make_input(1, f64::NAN, &[1.0, 0.0]),
+            make_input(2, f64::INFINITY, &[0.0, 1.0]),
+            make_input(3, f64::NEG_INFINITY, &[1.0, 1.0]),
+        ];
+        let seed = make_input(99, 0.0, &[1.0, 0.0]);
+        assert!(rescore(&inputs, None, &default_config(), 0).is_empty());
+        assert!(rescore(&inputs, Some(&seed), &default_config(), 0).is_empty());
     }
 
     #[test]
